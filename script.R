@@ -7,6 +7,10 @@ library(animation)
 library(gifski)
 library(geosphere)
 library(gridExtra)
+library(cowplot)
+library(grid)
+library(reshape2)
+
 
 rm(list=ls())  
 graphics.off() 
@@ -90,8 +94,8 @@ plot(gg)
 ###########################################################################
 
 
-### PAYS ------------------------------------------------------------------
-### DYNAMIQUE CARTE
+## PAYS ------------------------------------------------------------------
+## DYNAMIQUE CARTE
 map_country = map_data("usa")
 map_country = map_country %>% select(c(1,2,5))
 
@@ -101,43 +105,46 @@ epidemy_country = epidemy %>%
   summarize(total_cases = sum(cases, na.rm = TRUE),
             total_deaths = sum(deaths, na.rm = TRUE))%>%
   mutate(region="main")%>%
-  arrange(date) %>% 
+  arrange(date) %>%
   mutate(new_cases = total_cases - lag(total_cases, default = 0)) %>% # Différence entre jours consécutifs
-  mutate(new_deaths = total_deaths - lag(total_deaths, default = 0)) 
+  mutate(new_deaths = total_deaths - lag(total_deaths, default = 0))%>%
+  # ajout jours julien sur dataset de base pour comparer : 
+  mutate("date_julian" = (as.numeric(date))-18281)
+
 
 # pour intergration lat en long dans espidemy_country
-epidemy_maps_country = left_join(epidemy_country,map_country,by="region")
-
-# Animation
-gg = ggplot(epidemy_maps_country, aes(long, lat, group = region)) +
-  geom_polygon(aes(fill = new_cases), color = "black") +  
-  
-  scale_fill_gradientn(colors = c("blue", "yellow", "red"),
-                       values = scales::rescale(c(0, 10000, max(epidemy_country$total_cases)))) + 
-
-  labs(title = 'Total des Cas aux États-Unis - {frame_time}', 
-       fill = 'Total Cases') +
-  geom_text(aes(x = -125, y = 25, label = paste("Total Cases: ", total_cases), 
-                group = 1), size = 6, color = "black", vjust = -1) +
-  
-  theme_void() +
-  transition_time(date) +  
-  ease_aes('linear')
-
-nframes = 100  
-
-animated_plot = animate(gg, 
-                        nframes = nframes, 
-                        fps = 10, 
-                        width = 800, 
-                        height = 600,
-                        renderer = gifski_renderer(),
-                        end_pause = 20,
-                        rewind = FALSE)
-
-# Sauvegarder l'animation au format GIF
-date = Sys.Date()
-anim_save(paste0(animation_dir, 'evolution_new_cases_country_', date, '.gif'))
+# epidemy_maps_country = left_join(epidemy_country,map_country,by="region")
+# 
+# # Animation
+# gg = ggplot(epidemy_maps_country, aes(long, lat, group = region)) +
+#   geom_polygon(aes(fill = new_cases), color = "black") +
+# 
+#   scale_fill_gradientn(colors = c("blue", "yellow", "red"),
+#                        values = scales::rescale(c(0, 10000, max(epidemy_country$total_cases)))) +
+# 
+#   labs(title = 'Total des Cas aux États-Unis - {frame_time}',
+#        fill = 'Total Cases') +
+#   geom_text(aes(x = -125, y = 25, label = paste("Total Cases: ", total_cases),
+#                 group = 1), size = 6, color = "black", vjust = -1) +
+# 
+#   theme_void() +
+#   transition_time(date) +
+#   ease_aes('linear')
+# 
+# nframes = 100
+# 
+# animated_plot = animate(gg,
+#                         nframes = nframes,
+#                         fps = 10,
+#                         width = 800,
+#                         height = 600,
+#                         renderer = gifski_renderer(),
+#                         end_pause = 20,
+#                         rewind = FALSE)
+# 
+# # Sauvegarder l'animation au format GIF
+# date = Sys.Date()
+# anim_save(paste0(animation_dir, 'evolution_new_cases_country_', date, '.gif'))
 
 ### DYNAMIQUE GRAPHS
 gg = ggplot(data = epidemy_country, aes(x = date)) +
@@ -180,63 +187,67 @@ epidemy_state = epidemy %>%
   mutate(new_cases_by_state = pmax(cases_by_state - lag(cases_by_state, default = 0), 0)) %>%  # Différence entre jours consécutifs, mais valeurs minimales à 0
   mutate(new_deaths_by_state = pmax(deaths_by_state - lag(deaths_by_state, default = 0), 0))  # Idem pour les décès
 
-# pour intergration lat en long dans espidemy_state
-epidemy_maps_state = left_join(epidemy_state,map_state,by = "state")
-
-### Animation new_cases_by_state
-# gg = ggplot(epidemy_maps_state, aes(long, lat, group = state)) +
-#   geom_polygon(data = epidemy_maps_state, aes(fill = new_cases_by_state), color = "black") +  
-#   scale_fill_gradientn(colors = c("blue", "yellow", "red"),
-#                        values = scales::rescale(c(0, 10000, max(epidemy_country$new_cases_by_state)))) + 
-#   labs(title = 'Cas aux États-Unis par state - {frame_time}', 
-#        fill = 'Total Cases') +
-#   geom_text(data = epidemy_country ,aes(x = -125, y = 25, label = paste("Total Cases: ", total_cases), 
-#                 group = 1), size = 6, color = "black", vjust = -1) +
-#   geom_line(data = epidemy_country, aes(x=date, y= total_cases))+
-#   
-#   theme_void() +
-#   transition_time(date) +  
-#   ease_aes('linear')
-# 
-# nframes = 100  
-# 
-# animated_plot = animate(gg, 
-#                         nframes = nframes, 
-#                         fps = 10, 
-#                         width = 800, 
-#                         height = 600,
-#                         renderer = gifski_renderer(),
-#                         end_pause = 20,
-#                         rewind = FALSE)
-
-### Animation cases_by_state
-gg = ggplot(epidemy_maps_state, aes(long, lat, group = state)) +
-  geom_polygon(data = epidemy_maps_state, aes(fill = cases_by_state), color = "black") +  
-  scale_fill_gradientn(colors = c("blue", "yellow", "red"),
-                       values = scales::rescale(c(0, 10000, max(epidemy_country$cases_by_state)))) + 
-  labs(title = 'Cas aux États-Unis par state - {frame_time}', 
-       fill = 'Total Cases') +
-  geom_text(data = epidemy_country ,aes(x = -110, y = 25, label = paste("Total Cases: ", total_cases), 
-                                       group = 1), size = 6, color = "black", vjust = -1) +
-  theme_void() +
-  transition_time(date) +  
-  ease_aes('linear')
-
-nframes = 100  
-animated_plot = animate(gg, 
-                        nframes = nframes, 
-                        fps = 10, 
-                        width = 800, 
-                        height = 600,
-                        renderer = gifski_renderer(),
-                        end_pause = 20,
-                        rewind = FALSE)
-
-# sauvegarde
-date_time <- Sys.time()
-date <- format(date_time, "%Y-%m-%d_%H-%M-%S")
-anim_save(paste0(animation_dir, 'evolution_cases_state_', date, '.gif'))
-
+anim_state = F
+if (anim_state == T){
+  # pour intergration lat en long dans espidemy_state
+  epidemy_maps_state = left_join(epidemy_state,map_state,by = "state")
+  
+  ### Animation new_cases_by_state
+  # gg = ggplot(epidemy_maps_state, aes(long, lat, group = state)) +
+  #   geom_polygon(data = epidemy_maps_state, aes(fill = new_cases_by_state), color = "black") +  
+  #   scale_fill_gradientn(colors = c("blue", "yellow", "red"),
+  #                        values = scales::rescale(c(0, 10000, max(epidemy_country$new_cases_by_state)))) + 
+  #   labs(title = 'Cas aux États-Unis par state - {frame_time}', 
+  #        fill = 'Total Cases') +
+  #   geom_text(data = epidemy_country ,aes(x = -125, y = 25, label = paste("Total Cases: ", total_cases), 
+  #                 group = 1), size = 6, color = "black", vjust = -1) +
+  #   geom_line(data = epidemy_country, aes(x=date, y= total_cases))+
+  #   
+  #   theme_void() +
+  #   transition_time(date) +  
+  #   ease_aes('linear')
+  # 
+  # nframes = 100  
+  # 
+  # animated_plot = animate(gg, 
+  #                         nframes = nframes, 
+  #                         fps = 10, 
+  #                         width = 800, 
+  #                         height = 600,
+  #                         renderer = gifski_renderer(),
+  #                         end_pause = 20,
+  #                         rewind = FALSE)
+  
+  ### attention temps d'éxécution long
+  
+  ### Animation cases_by_state
+  gg = ggplot(epidemy_maps_state, aes(long, lat, group = state)) +
+    geom_polygon(data = epidemy_maps_state, aes(fill = cases_by_state), color = "black") +  
+    scale_fill_gradientn(colors = c("blue", "yellow", "red"),
+                         values = scales::rescale(c(0, 10000, max(epidemy_country$cases_by_state)))) + 
+    labs(title = 'Cas aux États-Unis par state - {frame_time}', 
+         fill = 'Total Cases') +
+    geom_text(data = epidemy_country ,aes(x = -110, y = 25, label = paste("Total Cases: ", total_cases), 
+                                         group = 1), size = 6, color = "black", vjust = -1) +
+    theme_void() +
+    transition_time(date) +  
+    ease_aes('linear')
+  
+  nframes = 100  
+  animated_plot = animate(gg, 
+                          nframes = nframes, 
+                          fps = 10, 
+                          width = 800, 
+                          height = 600,
+                          renderer = gifski_renderer(),
+                          end_pause = 20,
+                          rewind = FALSE)
+  
+  # sauvegarde
+  date_time = Sys.time()
+  date = format(date_time, "%Y-%m-%d_%H-%M-%S")
+  anim_save(paste0(animation_dir, 'evolution_cases_state_', date, '.gif'))
+}
 
 ### DYNAMIQUE GRAPHS
 gg_cases = ggplot(data = epidemy_state, aes(x = date)) +
@@ -273,247 +284,472 @@ gg_new_deaths = ggplot(data = epidemy_state, aes(x = date)) +
 
 grid.arrange(gg_cases, gg_new_cases, gg_deaths, gg_new_deaths, ncol = 2)
 
+
 ### COUNTIES -------------------------------------------------------------------
 ### DYNAMIQUE CARTE
-map_county = map_data("county")
-map_county = map_county %>% rename("state"="region")
-map_county = map_county %>% rename("county"="subregion")
-map_county$state = tools::toTitleCase(map_county$state) # ajouter maj + sort
-map_county$county = sort(tools::toTitleCase(map_county$county)) # ajouter maj + sort
+# map_county = map_data("county")
+# map_county = map_county %>% rename("state"="region")
+# map_county = map_county %>% rename("county"="subregion")
+# map_county$state = tools::toTitleCase(map_county$state) # ajouter maj + sort
+# map_county$county = sort(tools::toTitleCase(map_county$county)) # ajouter maj + sort
+# 
+# # merge pour dynamique à l'échelle des états
+# epidemy_county = epidemy %>%
+#   group_by(date, county) %>%
+#   summarize(cases_by_county = sum(cases, na.rm = TRUE),
+#             deaths_by_county = sum(deaths, na.rm = TRUE)) %>%
+#   arrange(county, date) %>% 
+#   mutate(new_cases_by_county = pmax(cases_by_county - lag(cases_by_county, default = 0), 0)) %>%  # Différence entre jours consécutifs, mais valeurs minimales à 0
+#   mutate(new_deaths_by_county = pmax(deaths_by_county - lag(deaths_by_county, default = 0), 0)) 
+# # pour intergration lat en long dans espidemy_state
+# epidemy_maps_county = left_join(epidemy_county,map_county,by="county")
+# 
+# # Animation
+# gg = ggplot(epidemy_maps_county, aes(long, lat, group = county)) +
+#   geom_polygon(aes(fill = new_cases_by_county), color = "black") +  
+#   
+#   scale_fill_gradientn(colors = c("blue", "yellow", "red"),
+#                        values = scales::rescale(c(0, 10000, max(epidemy_country$new_cases_by_county)))) + 
+#   
+#   labs(title = 'Cas aux États-Unis par county - {frame_time}', 
+#        fill = 'Total Cases') +
+#   geom_text(data = epidemy_country ,aes(x = -125, y = 25, label = paste("Total Cases: ", total_cases), 
+#                                        group = 1), size = 6, color = "black", vjust = -1) +
+#   
+#   theme_void() +
+#   transition_time(date) +  
+#   ease_aes('linear')
+# 
+# nframes = 100  
+# animated_plot = animate(gg, 
+#                         nframes = nframes, 
+#                         fps = 10, 
+#                         width = 800, 
+#                         height = 600,
+#                         renderer = gifski_renderer(),
+#                         end_pause = 20,
+#                         rewind = FALSE)
+# 
+# # sauvegarde
+# date = Sys.Date()
+# anim_save(paste0(animation_dir, 'evolution_cases_county_', date, '.gif'))
 
-# merge pour dynamique à l'échelle des états
-epidemy_county = epidemy %>%
-  group_by(date,county) %>%
-  summarize(cases_by_county = sum(cases, na.rm = TRUE),
-            deaths_by_county = sum(deaths, na.rm = TRUE))%>%
-  
-  arrange(county, date) %>% 
-  
-  mutate(new_cases_by_county = cases_by_county - lag(cases_by_county, default = 0)) %>% # Différence entre jours consécutifs
-  mutate(new_deaths_by_county = deaths_by_county - lag(deaths_by_county, default = 0)) 
-
-# pour intergration lat en long dans espidemy_state
-epidemy_maps_county = left_join(epidemy_county,map_county,by="county")
-
-# Animation
-gg = ggplot(epidemy_maps_county, aes(long, lat, group = county)) +
-  geom_polygon(aes(fill = new_cases_by_county), color = "black") +  
-  
-  scale_fill_gradientn(colors = c("blue", "yellow", "red"),
-                       values = scales::rescale(c(0, 10000, max(epidemy_country$new_cases_by_county)))) + 
-  
-  labs(title = 'Cas aux États-Unis par county - {frame_time}', 
-       fill = 'Total Cases') +
-  geom_text(data = epidemy_country ,aes(x = -125, y = 25, label = paste("Total Cases: ", total_cases), 
-                                       group = 1), size = 6, color = "black", vjust = -1) +
-  
-  theme_void() +
-  transition_time(date) +  
-  ease_aes('linear')
-
-nframes = 100  
-animated_plot = animate(gg, 
-                        nframes = nframes, 
-                        fps = 10, 
-                        width = 800, 
-                        height = 600,
-                        renderer = gifski_renderer(),
-                        end_pause = 20,
-                        rewind = FALSE)
-
-# sauvegarde
-date = Sys.Date()
-anim_save(paste0(animation_dir, 'evolution_cases_county_', date, '.gif'))
-
-### DYNAMIQUE GRAPHS
-gg_cases = ggplot(data = epidemy_county, aes(x = date)) +
-  geom_line(aes(y = cases_by_county, color = county)) +
-  labs(title = "Évolution des cas par county",
-       x = "Date", 
-       y = "Nombre de cas (log)",
-       color = "État") +  
-  scale_y_log10() +
-  theme(legend.position = "none")
-
-gg_new_cases = ggplot(data = epidemy_county, aes(x = date)) +
-  geom_line(aes(y = new_cases_by_county, color = county)) +
-  labs(title = "Nouveaux cas par county",
-       x = "Date", 
-       y = "Nouveaux cas (log)",
-       color = "État") +
-  scale_y_log10() +
-  theme(legend.position = "none")
-
-gg_deaths = ggplot(data = epidemy_county, aes(x = date)) +
-  geom_line(aes(y = deaths_by_county, color = county)) +
-  labs(title = "Évolution des décès par county",
-       x = "Date", 
-       y = "Nombre de décès (log)",
-       color = "État") +
-  scale_y_log10() +
-  theme(legend.position = "none")
-
-gg_new_deaths = ggplot(data = epidemy_county, aes(x = date)) +
-  geom_line(aes(y = new_deaths_by_county, color = county)) +
-  labs(title = "Nouveaux décès par county",
-       x = "Date", 
-       y = "Nouveaux décès (log)",
-       color = "État") +
-  scale_y_log10() +
-  theme(legend.position = "none")
-
-grid.arrange(gg_cases, gg_new_cases, gg_deaths, gg_new_deaths, ncol = 2)
+### DYNAMIQUE GRAPHS => trop de county
 
 ################################################################################
-# Creation model ---------------------------------------------------------------
+# Creation model TPS DISCRET ---------------------------------------------------
 ################################################################################
 
-# Réseux de contact avec modèles SEIR ou SEIRS ? (bibliographie)
-# trouver matrice d'adjacence
-contact_matrix = matrix()
-# choix réseaux orienté pondéré ?
-# statique ou dynamique (si dynamique, obligatoirement en tps discret ?)
+# simplification dataset -------------------------------------------------------
 
-# déduire métriques :
-# - degré
-# - degré pondéré
-# - polarité
-# - GSCC
+epidemy_country_weeks = epidemy_country %>%
+  mutate("date_julian" = (as.numeric(date))-18282)%>%
+  mutate("weeks" = (date_julian)%/%7 + 1)%>%
+  group_by(weeks)%>%
+  summarise(
+    total_cases = sum(total_cases),
+    total_deaths = sum(total_deaths),
+    new_cases = sum(new_cases),
+    new_deaths = sum(new_deaths))
 
-# Modèle 
-Paramètres globaux
-T <- 50  # Durée de la simulation
-num_populations <- 9
-pop_sizes <- c(1000, 800, 1200, 600, 400, 700, 100, 50, 500)
-beta <- 0.2
-beta_inter <- 0.01
-gamma <- 0.05
-delta <- 0.01  # Taux de perte d'immunité (Rétablis devenant Susceptibles)
+plot(x=epidemy_country_weeks$weeks,y=epidemy_country_weeks$new_cases)
+lines(x=epidemy_country_weeks$weeks,y=epidemy_country_weeks$new_cases,type="l")
 
 
-metapop_id = "05"
 
-info_pop = read.csv(paste0("../TD_metapop_network_data/net_",metapop_id,"/","info_pop_aggregate.csv"))
-network_static = read.csv(paste0("../TD_metapop_network_data/net_",metapop_id,"/","network_static.csv"))
+plot(x=epidemy_country$date,y=epidemy_country$new_cases)
 
-num_populations = nrow(info_pop)
-info_pop$simu_id = seq(1,num_populations)
+epidemy_state_weeks = epidemy_state %>%
+  mutate("date_julian" = (as.numeric(date))-18282)%>%
+  mutate("weeks" = (date_julian)%/%7 + 1)%>%
+  group_by(weeks,state)%>%
+  summarise(
+    cases_by_state = sum(cases_by_state),
+    deaths_by_state = sum(deaths_by_state),
+    new_cases_by_state = sum(new_cases_by_state),
+    new_deaths_by_state = sum(new_deaths_by_state)) %>% 
+  arrange(state)
 
-# matrice de contacts alternative
-contact_matrix <- matrix(0.0, nrow = num_populations, ncol = num_populations)
-for (i in 1:num_populations) {
-  for (j in 1:num_populations) {
-    the_weight = network_static[(network_static$source_id == info_pop$node_id[info_pop$simu_id == i]) & (network_static$destination_id == info_pop$node_id[info_pop$simu_id == j]),]$weight
-    if (length(the_weight) > 0) {
-      contact_matrix[i,j] = the_weight
-    }
+epidemy_country = epidemy_country%>%
+  mutate("date_julian" = (as.numeric(date))-18282)
+
+# paramètres bibliographie -----------------------------------------------------
+
+# model SEIRS covid estimation params (biblio) : 
+# R0 = 2.5 − 3.5
+
+# taux_transmission => beta = 0.35−0.7
+# tps_incubation => 1/sigma = 4 − 6 jours => 0.17 − 0.25
+# taux_mortalite => mu = 0.1 − 0.2
+# taux_immunisation => gamma = 0.143 − 0.2
+# tps_réinfection => 1/w = ...  => 0.00018 − 0.00055 
+
+### ETAT -----------------------------------------------------------------------
+### MODEL Deterministe ---------------------------------------------------------
+
+SEIRDS_model_det = function(S0, E0, I0, R0, D0, beta, sigma, mu, gamma, t_max) {
+  
+  # Compartiment
+  S = numeric(t_max)
+  E = numeric(t_max)
+  I = numeric(t_max)
+  R = numeric(t_max)
+  D = numeric(t_max)
+  N = numeric(t_max)
+  
+  S[1] = S0
+  E[1] = E0
+  I[1] = I0
+  R[1] = R0
+  D[1] = D0
+  
+  N[1] = S0 + E0 + I0 + R0 - D0
+  t = 0
+
+  # Initialisation historique
+  history = data.frame(time = 0, S = S[1], E = E[1], I = I[1], R = R[1], D = D[1], N = N[1])
+  
+  for (t in 1:t_max) {
+    
+    new_E = beta * S[t] * I[t] / N[t]      # Transmission
+    new_I = sigma * E[t]         # Progression des exposés vers infectieux
+    new_R = gamma * I[t]         # Récupération des infectieux
+    new_D = mu * I[t]            # Décès parmi les infectieux
+    new_S = w * R[t]             # Perte d'immunité vers susceptibles
+
+    # Simulation des transitions
+    S[t + 1] = S[t] - new_E + new_S
+    E[t + 1] = E[t] + new_E - new_I
+    I[t + 1] = I[t] + new_I - new_R - new_D
+    R[t + 1] = R[t] + new_R - new_S
+    D[t + 1] = D[t] + new_D
+    
+    N[t + 1] = N[t] - new_D
+    
+    # Assurer que les populations ne deviennent pas négatives
+    S[t + 1] = max(S[t + 1], 0)
+    E[t + 1] = max(E[t + 1], 0)
+    I[t + 1] = max(I[t + 1], 0)
+    R[t + 1] = max(R[t + 1], 0)
+    D[t + 1] = max(D[t + 1], 0)
+    
+    N[t + 1] = max(N[t + 1], 0)
+    
+    history = rbind(history, data.frame(time = t, S = S[t + 1], E = E[t + 1], I = I[t + 1], R = R[t + 1], D = D[t + 1], N = N[t + 1]))
   }
-}
-
-pop_sizes = info_pop$nb_indiv
-
-
-# in_degree = table(network_static$destination_id)
-# out_degree = table(network_static$source_id)
-
-
-
-network_dynamic_weeks = read.csv(paste0("../TD_metapop_network_data/net_",metapop_id,"/","network_dynamic_weeks.csv"))
-
-list_of_contact_matrix = list()
-# matrice de contacts alternative
-for (t in 1:max(network_dynamic_weeks$date)) {
-  tmp_net = network_dynamic_weeks[network_dynamic_weeks$date == t,]
-  contact_matrix <- matrix(0.0, nrow = num_populations, ncol = num_populations)
-  for (i in 1:num_populations) {
-    for (j in 1:num_populations) {
-      the_weight = tmp_net[(tmp_net$source_id == info_pop$node_id[info_pop$simu_id == i]) & (tmp_net$destination_id == info_pop$node_id[info_pop$simu_id == j]),]$weight
-      if (length(the_weight) > 0) {
-        contact_matrix[i,j] = the_weight
-      }
-    }
-  }
-  list_of_contact_matrix[[t]] = contact_matrix
+  
+  return(history)
 }
 
 
+# Paramètres du modèle
+N = 330000000        # Population totale
+I0 = 1              # Nombre initial d'infectés
+S0 = N - I0          # Nombre initial de susceptibles
+E0 = 20              # Nombre initial d'exposés
+R0 = 0               # Nombre initial de récupérés
+D0 = 0               # Nombre initial de décédés
+beta = 0.8           # Taux de transmission
+sigma = 0.03         # Taux d'incubation (1 / durée d'incubation)
+mu = 0.05           # Taux de mortalité
+gamma = 0.04         # Taux de /immunité 
+w = 0.0000030          # Taux de perte d'immunité (1 / durée d'infection)
+t_max = 844           # Nombre de jours pour la simulation
 
-# Initialisation des vecteurs pour stocker les résultats pour chaque population
-S <- matrix(0, nrow = num_populations, ncol = T)
-I <- matrix(0, nrow = num_populations, ncol = T)
-R <- matrix(0, nrow = num_populations, ncol = T)
-N <- matrix(0, nrow = num_populations, ncol = T)
-new_infections <- matrix(0, nrow = num_populations, ncol = T)
-new_infections_from_ext <- matrix(0, nrow = num_populations, ncol = T)
-new_recoveries <- matrix(0, nrow = num_populations, ncol = T)
-new_lossimmunity <- matrix(0, nrow = num_populations, ncol = T)
+# Exécution de la simulation
+# set.seed(123) 
+history_SEIRD_model_det = SEIRDS_model_det(S0, E0, I0, R0, D0, beta, sigma, mu, gamma, t_max)
 
-# Initialisation des conditions initiales pour chaque population
-for (i in 1:num_populations) {
-  S[i, 1] <- pop_sizes[i]  # Une personne infectée au départ
-  I[i, 1] <- 0
-  R[i, 1] <- 0
-  N[i, 1] <- S[i, 1] + I[i, 1] + R[i, 1]
+history_melt_SEIRD_det = melt(history_SEIRD_model_det, 
+                              id.vars = "time", 
+                              variable.name = "Compartment", 
+                              value.name = "Count")%>%
+  filter(Compartment!="N")
+
+# vérif
+# plot(history_SEIRD_model_det$S~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$E~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$I~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$R~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$D~history_SEIRD_model_det$time)
+
+
+ggplot(history_melt_SEIRD_det, aes(x = time, y = Count, color = Compartment)) +
+  geom_step() +
+  labs(title = "Modèle SEIRS Deterministe à Temps Discret",
+       x = "Temps",
+       y = "Nombre d'Individus") +
+  theme_minimal() +
+  scale_color_manual(values = c("blue", "red", "green","orange","black"))
+
+# comparaison avec epidemy_country
+epidemy_country_sim_det = history_SEIRD_model_det%>%
+  select("time","I","E","D")%>%
+  mutate("I_E_sim" = I+E)%>%
+  mutate("D_sim" = pmax(D - lag(D, default = 0), 0)) %>% # équivalent de new_death
+  rename("date"="time")%>%
+  select(-c("I","E","D"))
+
+epidemy_country_obs = epidemy_country%>%
+  select(c("date_julian","new_cases","new_deaths"))%>%
+  rename("I_E_obs"= "new_cases",
+         "D_obs" = "new_deaths",
+         "date"= "date_julian")
+
+
+# optimisation paramètres ------------------------------------------------------
+
+# Paramètres initiaux
+N = 330000000        # Population totale
+I0 = 10              # Nombre initial d'infectés
+S0 = N - I0          # Nombre initial de susceptibles
+E0 = 100             # Nombre initial d'exposés
+R0 = 0               # Nombre initial de récupérés
+D0 = 0               # Nombre initial de décédés
+X0 = c() # param a estimer
+
+beta = 0.5   # Taux de transmission
+sigma = 0.1  # Taux d'incubation (1 / durée d'incubation)
+mu = 0.02    # Taux de mortalité
+gamma = 0.1  # Taux de immunité 
+w = 0.000003  # Taux de perte d'immunité (1 / durée d'infection)
+P0 = c(beta,sigma,mu,gamma,w) # param a estimer
+
+t_max = 844           # Nombre de jours pour la simulation
+
+# Fonction de vraisemblance combinée pour les cas et les décès
+log_likelihood = function(theta) {
+  
+  I_E_obs = epidemy_country_obs$I_E_obs
+  D_obs = epidemy_country_obs$D_obs
+  
+  beta = theta[1]
+  sigma = theta[2]
+  mu = theta[3]
+  gamma = theta[4]
+  w = theta[5]
+  
+  S0 = S0
+  E0 = E0
+  I0 = I0
+  R0 = R0
+  D0 = D0
+  
+  model_results = SEIRDS_model_det(S0, E0, I0, R0, D0, beta, sigma, mu, gamma, t_max)
+  
+  I_E_sim = model_results$I
+  D_sim = model_results$D
+   # Likehood pour cas (Poisson)
+  LLC = sum(dpois(I_E_obs, I_E_sim, log = T)) # Likehood pour cas (Poisson)
+  LLD = sum(dpois(D_obs, D_sim, log = T))  # Likehood pour deaths (Poisson)
+  LL =  LLC + LLD     # Likehood combinée
+  print(LLC)
+  print(LLD)
+  print(LL)
+  LLC = LLC[LLC>0]
+  LLD = LLD[LLD>0]
+  
+  return(LLC)  # négatif pour minimisation
 }
-# infection d'une population aléatoirement
-pop_id = sample(1:num_populations, 1)
-S[pop_id, 1] <- pop_sizes[pop_id] - 1  # Une personne infectée au départ
-I[pop_id, 1] <- 1
 
-# Simulation de l'épidémie dans la métapopulation
-for (t in 2:T) {
-  for (i in 1:num_populations) {
-    # Dynamique dans la population i
+theta0 = c(P0,X0) 
+
+# ça marche pas pour l'instant
+
+# Optimisation de la vraisemblance combinée
+# result_optim = optim(theta0, 
+#                log_likelihood, 
+#                control=list(fnscale=-1))
+# 
+# # Résultats des paramètres optimisés
+# optimized_params = result_optim$par
+
+# [...]
+
+### Stochastique ---------------------------------------------------------------
+
+# Fonction de simulation du modèle SIR stochastique à temps discret
+SEIRDS_model_binomial = function(S0, E0, I0, R0, D0, beta, sigma, mu, gamma, t_max) {
+  
+  # Compartiment
+  S = numeric(t_max)
+  E = numeric(t_max)
+  I = numeric(t_max)
+  R = numeric(t_max)
+  D = numeric(t_max)
+  N = numeric(t_max)
+  
+  S[1] = S0
+  E[1] = E0
+  I[1] = I0
+  R[1] = R0
+  D[1] = D0
+  
+  N[1] = S0 + E0 + I0 + R0 - D0
+  t = 0
+  
+  # Initialisation historique
+  history = data.frame(time = 0, S = S[1], E = E[1], I = I[1], R = R[1], D = D[1], N = N[1])
+  
+  # Boucle de simulation
+  for (t in 1:t_max) {
+    
     # Calcul des probabilités de transition
-    prob_transmission <- 1 - exp(-beta * I[i, t-1] / N[i, t-1])
-    prob_recuperation <- 1 - exp(-gamma)
-    prob_lossimmunity <- 1 - exp(-delta)
+    p_sigma = 1 - exp(-sigma * I/N)
+    p_beta = 1 - exp(-beta) 
+    p_gamma = 1 - exp(-gamma)
+    p_w = 1 - exp(-w) 
+    p_mu = 1 - exp(-mu)
     
-    # Mise à jour des compartiments S, I et R
-    new_infections[i, t] <- rbinom(1, S[i, t-1], prob_transmission)
-    new_recoveries[i, t] <- rbinom(1, I[i, t-1], prob_recuperation)
-    new_lossimmunity[i, t] <- rbinom(1, R[i, t-1], prob_lossimmunity)
+    # Simulation des transitions
+    new_E = rbinom(1, S, p_sigma)
+    new_I = rbinom(1, E, p_beta)
+    new_R = rbinom(1, I, p_gamma)
+    new_S = rbinom(1, R, p_w)
+    new_D = rbinom(1, R, p_mu)
     
+    # Simulation des transitions
+    S[t + 1] = S[t] - new_E + new_S
+    E[t + 1] = E[t] + new_E - new_I
+    I[t + 1] = I[t] + new_I - new_R - new_D
+    R[t + 1] = R[t] + new_R - new_S
+    D[t + 1] = D[t] + new_D
     
-    # Mettre à jour les compartiments S, I, R dans la population i
-    S[i, t] <- S[i, t-1] + new_lossimmunity[i, t] - new_infections[i, t]
-    I[i, t] <- I[i, t-1] + new_infections[i, t] - new_recoveries[i, t]
-    R[i, t] <- R[i, t-1] + new_recoveries[i, t] - new_lossimmunity[i, t]
+    N[t + 1] = N[t] - new_D
     
-    # Simulation de l'étape de propagation dans chaque population
-    for (j in 1:num_populations) {
-      if (i != j) {
-        
-        # prob_transmission_from_j <- 1 - exp(-beta_inter * contact_matrix[i, j] * I[j, t-1] / N[i, t-1])
-        prob_transmission_from_j <- 1 - exp(-beta_inter * list_of_contact_matrix[[t]][i, j] * I[j, t-1] / N[i, t-1])
-        
-        infections_from_j <- rbinom(1, S[i, t], prob_transmission_from_j)
-        new_infections_from_ext[i, t] <- new_infections_from_ext[i, t] + infections_from_j
-        S[i, t] <- S[i, t] - infections_from_j
-        I[i, t] <- I[i, t] + infections_from_j
-      }
-    }
+    # Assurer que les populations ne deviennent pas négatives
+    S[t + 1] = max(S[t + 1], 0)
+    E[t + 1] = max(E[t + 1], 0)
+    I[t + 1] = max(I[t + 1], 0)
+    R[t + 1] = max(R[t + 1], 0)
+    D[t + 1] = max(D[t + 1], 0)
     
-    N[i, t] <- S[i, t] + I[i, t] + R[i, t]
+    N[t + 1] = max(N[t + 1], 0)
+    
+    history = rbind(history, data.frame(time = t, S = S[t + 1], E = E[t + 1], I = I[t + 1], R = R[t + 1], D = D[t + 1], N = N[t + 1]))
   }
+  
+  return(history)
 }
 
+# Paramètres du modèle
+N = 330000000        # Population totale
+I0 = 1              # Nombre initial d'infectés
+S0 = N - I0          # Nombre initial de susceptibles
+E0 = 20              # Nombre initial d'exposés
+R0 = 0               # Nombre initial de récupérés
+D0 = 0               # Nombre initial de décédés
+beta = 0.8           # Taux de transmission
+sigma = 0.03         # Taux d'incubation (1 / durée d'incubation)
+mu = 0.05           # Taux de mortalité
+gamma = 0.04         # Taux de /immunité 
+w = 0.0000030          # Taux de perte d'immunité (1 / durée d'infection)
+t_max = 844           # Nombre de jours pour la simulation
+
+# Exécution de la simulation
+set.seed(123) 
+history_SEIRD_binomial = SEIRDS_model_binomial(S0, E0, I0, R0, D0, beta, sigma, mu, gamma, t_max)
+
+history_melt_SEIRD_binomial = melt(history_SEIRD_binomial, 
+                              id.vars = "time", 
+                              variable.name = "Compartment", 
+                              value.name = "Count")%>%
+  filter(Compartment!="N")
+
+# vérif
+# plot(history_SEIRD_model_det$S~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$E~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$I~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$R~history_SEIRD_model_det$time)
+# plot(history_SEIRD_model_det$D~history_SEIRD_model_det$time)
 
 
-library(ggplot2)
-library(reshape2)
+ggplot(history_melt_SEIRD_binomial, aes(x = time, y = Count, color = Compartment)) +
+  geom_step() +
+  labs(title = "Modèle SEIRS Stochastique à Temps Discret",
+       x = "Temps",
+       y = "Nombre d'Individus") +
+  theme_minimal() +
+  scale_color_manual(values = c("blue", "red", "green","orange","black"))
 
-# Convertir la matrice en un data frame pour ggplot2
-dynamics_df <- as.data.frame(t(I))
-dynamics_df$Time <- 1:ncol(I)
+# comparaison avec epidemy_country
+epidemy_country_sim_stoch = history_SEIRD_binomial%>%
+  select("time","I","E","D")%>%
+  mutate("I_E_sim" = I+E)%>%
+  mutate("D_sim" = pmax(D - lag(D, default = 0), 0)) %>% # équivalent de new_death
+  rename("date"="time")%>%
+  select(-c("I","E","D"))
 
-# Réorganiser le data frame en format long
-dynamics_long <- melt(dynamics_df, id.vars = "Time", variable.name = "Population", value.name = "Value")
+# boucle stochastique 
+nb_simu = 10
+list_results_I_E_sim = list()
+list_result_D_sim = list()
+df_stoch_E_I_sim = data.frame("date"=seq(0:844))
+df_stoch_D_sim = data.frame("date"=seq(0:844))
 
-# Tracer les dynamiques avec ggplot2
-ggplot(dynamics_long, aes(x = Time, y = Value, group = Population)) +
-  geom_line(color = "blue", alpha = 0.3) +
-  labs(x = "Temps", y = "Dynamique épidémique", title = "Dynamique épidémique des différentes populations") +
-  theme_minimal()
+for (i in 1:nb_simu){
+  history_SEIRD_binomial = SEIRDS_model_binomial(S0, E0, I0, R0, D0, beta, sigma, mu, gamma, t_max)
+  epidemy_country_sim_stoch = history_SEIRD_binomial%>%
+    select("time","I","E","D")%>%
+    mutate("I_E_sim" = I+E)%>%
+    mutate("D_sim" = pmax(D - lag(D, default = 0), 0)) %>% # équivalent de new_death
+    rename("date"="time")%>%
+    select(-c("I","E","D"))
+  
+  list_results_I_E_sim[[i]] = epidemy_country_sim_stoch$I_E_sim
+  list_result_D_sim[[i]] = epidemy_country_sim_stoch$D_sim
+  
+  df_stoch_E_I_sim[i+1] = list_results_I_E_sim[[i]]
+  df_stoch_D_sim[i+1] = list_result_D_sim[[i]]
+}
+
+# optimisation paramètres ------------------------------------------------------
+
+# [...]
+
+################################################################################
+# représentation graphique 
+################################################################################
+
+gg = ggplot()+
+  scale_y_log10()+
+  geom_point(data=epidemy_country_obs, aes(x = date, y = I_E_obs),col="black")+
+  geom_point(data=epidemy_country_sim_det, aes(x = date, y = I_E_sim),col="blue")+
+  
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V2),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V3),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V4),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V5),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V6),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V7),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V8),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V9),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V10),col="red",alpha=0.5)+
+  geom_point(data=df_stoch_E_I_sim, aes(x = date, y = V11),col="red",alpha=0.5)
+  
+plot(gg)
+  
+gg = ggplot()+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V2),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V3),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V4),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V5),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V6),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V7),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V8),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V9),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V10),col="red",alpha=0.2)+
+  geom_line(data=df_stoch_E_I_sim, aes(x = date, y = V11),col="red",alpha=0.2)
+plot(gg)
+
+
+
+
+### METAPOP
+### Deterministe
+
+
+
+# Stochastique
 
 
