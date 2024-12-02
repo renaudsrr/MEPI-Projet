@@ -479,15 +479,15 @@ SEIRDS_model_binomial = function(P0, X0, t_max) {
   for (t in 1:t_max) {
     
     # Calcul des probabilités de transition
-    p_sigma = 1 - exp(-sigma * I[t]/N[t])
-    p_beta = 1 - exp(-beta ) 
+    p_beta = 1 - exp(-beta * I[t]/N[t]) 
+    p_sigma = 1 - exp(-sigma)
     p_gamma = 1 - exp(-gamma)
     p_w = 1 - exp(-w) 
     p_mu = 1 - exp(-mu)
     
     # Simulation des transitions
-    new_E = rbinom(1, S[t], p_sigma)
-    new_I = rbinom(1, E[t], p_beta)
+    new_E = rbinom(1, S[t], p_beta)
+    new_I = rbinom(1, E[t], p_sigma)
     new_R = rbinom(1, I[t], p_gamma)
     new_D = rbinom(1, I[t], p_mu)
     new_S = rbinom(1, R[t], p_w)
@@ -809,6 +809,8 @@ pop_size = pop_size_data %>%
   select(c("State","Population"))%>%
   filter(!(State %in% c("Alaska", "Hawaii", "Puerto Rico")))
 
+vect_pop_size = c(pop_size$Population)
+
 # Creation matrice de contact --------------------------------------------------
 contact_matrix = matrix(0.1, nrow = nb_state, ncol = nb_state)  # Taux de migration entre population
 
@@ -816,15 +818,15 @@ contact_matrix = matrix(0.1, nrow = nb_state, ncol = nb_state)  # Taux de migrat
 ### Deterministe ---------------------------------------------------------------
 ################################################################################
 
-SEIRDS_model_metapop_det = function(X0, P0, t_max){
+SEIRDS_model_metapop_det = function(X0, P0, contact_matrix, t_max){
     
   # Initialisation des vecteurs pour stocker les résultats pour chaque population
-  S = matrix(X0[2], nrow = nb_state, ncol = t_max)
-  E = matrix(X0[3], nrow = nb_state, ncol = t_max)
-  I = matrix(X0[4], nrow = nb_state, ncol = t_max)
-  R = matrix(X0[5], nrow = nb_state, ncol = t_max)
-  D = matrix(X0[6], nrow = nb_state, ncol = t_max)
-  N = matrix(X0[7], nrow = nb_state, ncol = t_max)
+  S = matrix(0, nrow = nb_state, ncol = t_max)
+  E = matrix(0, nrow = nb_state, ncol = t_max)
+  I = matrix(0, nrow = nb_state, ncol = t_max)
+  R = matrix(0, nrow = nb_state, ncol = t_max)
+  D = matrix(0, nrow = nb_state, ncol = t_max)
+  N = matrix(0, nrow = nb_state, ncol = t_max)
   
   beta = P0[1]
   beta_inter = P0[2]
@@ -833,16 +835,22 @@ SEIRDS_model_metapop_det = function(X0, P0, t_max){
   gamma = P0[5]
   w = P0[6]
   
-  new_infections = matrix(0, nrow = nb_state, ncol = t_max)
-  new_infections_from_ext = matrix(0, nrow = nb_state, ncol = t_max)
-  new_recoveries = matrix(0, nrow = nb_state, ncol = t_max)
-  new_lossimmunity = matrix(0, nrow = nb_state, ncol = t_max)
+  new_E = matrix(0, nrow = nb_state, ncol = t_max)
+  new_I = matrix(0, nrow = nb_state, ncol = t_max)
+  new_I_from_ext = matrix(0, nrow = nb_state, ncol = t_max)
+  new_R = matrix(0, nrow = nb_state, ncol = t_max)
+  new_D = matrix(0, nrow = nb_state, ncol = t_max)
+  new_S = matrix(0, nrow = nb_state, ncol = t_max)
   
-  history = data.frame(time = 0, S = S[[1]], E = E[[1]], I = I[[1]], R = R[[1]], D = D[[1]], N = N[[1]])
+  history = list(S = matrix(0, nrow = nb_state, ncol = t_max), 
+                 E = matrix(0, nrow = nb_state, ncol = t_max), 
+                 I = matrix(0, nrow = nb_state, ncol = t_max), 
+                 R = matrix(0, nrow = nb_state, ncol = t_max), 
+                 D = matrix(0, nrow = nb_state, ncol = t_max))
   
   # Initialisation des conditions initiales pour chaque population
   for (i in 1:nb_state) {
-    S[i, 1] = pop_size[i]  # Une personne infectée au départ
+    S[i, 1] = vect_pop_size[i]  # Une personne infectée au départ
     E[i, 1] = 0
     I[i, 1] = 0
     R[i, 1] = 0
@@ -852,70 +860,86 @@ SEIRDS_model_metapop_det = function(X0, P0, t_max){
   
   # infection d'une population aléatoirement
   pop_id = sample(1:nb_state, 1)
-  S[pop_id, 1] = pop_sizes[pop_id] - 1  # Une personne infectée au départ
-  I[pop_id, 1] = 1
+  S[pop_id, 1] = vect_pop_size[pop_id] - X0[1]  # Une personne infectée au départ
+  I[pop_id, 1] = X0[1]
+  
+  history$S[, 1] = S[, 1]
+  history$E[, 1] = E[, 1]
+  history$I[, 1] = I[, 1]
+  history$R[, 1] = R[, 1]
+  history$D[, 1] = D[, 1]
   
   # Simulation de l'épidémie dans la métapopulation
-  for (t in 2:T) {
+  for (t in 2:t_max){
+    
+    paste0("Generation tps : ",t)
+    
     for (i in 1:nb_state) {
+      
+      paste0("Num state : ",i)
+
       # Dynamique dans la population i
       # Calcul des probabilités de transition
-      prob_transmission = 1 - exp(-beta * I[i, t-1] / N[i, t-1])
-      prob_recuperation = 1 - exp(-gamma)
-      prob_lossimmunity = 1 - exp(-sigma)
+      prob_sigma = 1 - exp(-sigma * I[i, t-1]/N[i,t-1])
+      prob_beta = 1 - exp(-beta)
+      prob_gamma = 1 - exp(-gamma)
+      prob_w = 1 - exp(-w) 
+      prob_mu = 1 - exp(-mu)
       
-      # Mise à jour des compartiments S, I et R
-      new_infections[i, t] = rbinom(1, S[i, t-1], prob_transmission)
-      new_recoveries[i, t] = rbinom(1, I[i, t-1], prob_recuperation)
-      new_lossimmunity[i, t] = rbinom(1, R[i, t-1], prob_lossimmunity)
+      # Mise à jour des compartiments S, E, I, R et D
+      new_E[i, t] = rbinom(1, S[i, t-1], prob_beta)
+      new_I[i, t] = rbinom(1, E[i, t-1], prob_sigma)
+      new_R[i, t] = rbinom(1, I[i, t-1], prob_gamma)
+      new_D[i, t] = rbinom(1, I[i, t-1], prob_mu)
+      new_S[i, t] = rbinom(1, R[i, t-1], prob_w)
       
-      
-      # Mettre à jour les compartiments S, I, R dans la population i
-      S[i, t] = S[i, t-1] + new_lossimmunity[i, t] - new_infections[i, t]
-      I[i, t] = I[i, t-1] + new_infections[i, t] - new_recoveries[i, t]
-      R[i, t] = R[i, t-1] + new_recoveries[i, t] - new_lossimmunity[i, t]
+      # Mettre à jour les compartiments S, E, I, R et D dans la population i
+      S[i, t] = S[i, t-1] - new_E[i, t] + new_S[i, t]
+      E[i, t] = E[i, t-1] + new_E[i, t] - new_I[i,t]
+      I[i, t] = I[i, t-1] + new_I[i, t] - new_R[i, t] - new_D[i, t]
+      R[i, t] = R[i, t-1] + new_R[i, t] - new_S[i, t]
+      D[i, t] = D[i, t-1] + new_D[i, t]
       
       # Simulation de l'étape de propagation dans chaque population
       for (j in 1:nb_state) {
         if (i != j) {
+          
           prob_transmission_from_j = 1 - exp(-beta_inter * contact_matrix[i, j] * I[j, t-1] / N[i, t-1])
           infections_from_j = rbinom(1, S[i, t], prob_transmission_from_j)
-          new_infections_from_ext[i, t] = new_infections_from_ext[i, t] + infections_from_j
+          
+          new_I_from_ext[i, t] = new_I_from_ext[i, t] + infections_from_j
+          
           S[i, t] = S[i, t] - infections_from_j
-          I[i, t] = I[i, t] + infections_from_j
+          E[i, t] = E[i, t] + infections_from_j
         }
       }
       
-      N[i, t] = S[i, t] + I[i, t] + R[i, t]
+      N[i, t] = S[i, t] + I[i, t] + R[i, t] - D[i, t]
+      
     }
+    
+    history$S[, t] = S[, t]
+    history$E[, t] = E[, t]
+    history$I[, t] = I[, t]
+    history$R[, t] = R[, t]
+    history$D[, t] = D[, t]
   }
-
+  return(history)
 }
 
-# Tracé des résultats pour chaque population
-par(mfrow = c(2, 3))
-for (i in 1:num_populations) {
-  plot(1:T, S[i, ], type = "l", col = "blue", xlab = "Temps", ylab = "Susceptibles", ylim = c(0, max(pop_sizes)))
-  lines(1:T, I[i, ], col = "red")
-  lines(1:T, R[i, ], col = "green")
-  lines(1:T, N[i, ], col = "black")
-  lines(1:T, new_infections[i, ], col = "orange")
-  lines(1:T, new_recoveries[i, ], col = "purple")
-  lines(1:T, new_infections_from_ext[i, ], col = "yellow")
-  title(paste("Population", i))
-}
+# Stochastique------------------------------------------------------------------
+################################################################################
 
 
+### [...] à faire
 
+################################################################################
+# éxécution simulation ---------------------------------------------------------
+################################################################################
 
 # Paramètres initiaux
-N = 330000000        # Population totale
-I0 = 0              # Nombre initial d'infectés
-S0 = N - I0          # Nombre initial de susceptibles
 E0 = 1             # Nombre initial d'exposés
-R0 = 0               # Nombre initial de récupérés
-D0 = 0               # Nombre initial de décédés
-X0 = c(N=N,S0=S0,E0=E0,I0=I0,R0=R0,D0=D0) # param a estimer
+X0 = c(E0=E0) # param a estimer
 
 beta = 0.3   # Taux de transmission intrapop
 beta_inter = 0.01 # taux de transmission interpop <================== aussi sous forme de matrice !!!!!!!
@@ -925,10 +949,26 @@ gamma = 0.05  # Taux de immunité
 w = 0.1  # Taux de perte d'immunité (1 / durée d'infection)
 P0 = c(beta = beta, beta_inter = beta_inter, sigma = sigma,mu = mu,gamma = gamma,w = w) # param a estimer
 
-# Simulation -------------------------------------------------------------------
+# Deterministe -------------------------------------------------------------------
+
+history_metapop_det = SEIRDS_model_metapop_det(X0, P0, contact_matrix, t_max)
 
 
-# Stochastique------------------------------------------------------------------
-################################################################################
+# Tracé des résultats pour chaque population
+# par(mfrow = c(7, 7))
+# for (i in 1:nnb_state) {
+#   plot(1:T, S[i, ], type = "l", col = "blue", xlab = "Temps", ylab = "Susceptibles", ylim = c(0, max(pop_sizes)))
+#   lines(1:T, I[i, ], col = "red")
+#   lines(1:T, R[i, ], col = "green")
+#   lines(1:T, N[i, ], col = "black")
+#   lines(1:T, new_infections[i, ], col = "orange")
+#   lines(1:T, new_recoveries[i, ], col = "purple")
+#   lines(1:T, new_infections_from_ext[i, ], col = "yellow")
+#   title(paste("Population", i))
+# }
+
+# Stochstique -------------------------------------------------------------------
+
+
 
 
