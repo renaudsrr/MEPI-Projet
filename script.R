@@ -811,8 +811,13 @@ pop_size = pop_size_data %>%
 
 vect_pop_size = c(pop_size$Population)
 
-# Creation matrice de contact --------------------------------------------------
-contact_matrix = matrix(0.1, nrow = nb_state, ncol = nb_state)  # Taux de migration entre population
+gg = ggplot(data = pop_size, aes(x = State, y = Population)) +
+  geom_bar(stat = "identity") + 
+  labs(title = "Population par État en 2020",
+       x = "État",
+       y = "Population")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotation des labels d'axe X
+plot(gg)
 
 
 ### Deterministe ---------------------------------------------------------------
@@ -872,16 +877,14 @@ SEIRDS_model_metapop_det = function(X0, P0, contact_matrix, t_max){
   # Simulation de l'épidémie dans la métapopulation
   for (t in 2:t_max){
     
-    paste0("Generation tps : ",t)
+    print(paste0("Generation tps : ", t))
     
     for (i in 1:nb_state) {
       
-      paste0("Num state : ",i)
-
       # Dynamique dans la population i
       # Calcul des probabilités de transition
-      prob_sigma = 1 - exp(-sigma * I[i, t-1]/N[i,t-1])
-      prob_beta = 1 - exp(-beta)
+      prob_beta = 1 - exp(-beta* I[i, t-1]/N[i,t-1])
+      prob_sigma = 1 - exp(-sigma)
       prob_gamma = 1 - exp(-gamma)
       prob_w = 1 - exp(-w) 
       prob_mu = 1 - exp(-mu)
@@ -894,11 +897,12 @@ SEIRDS_model_metapop_det = function(X0, P0, contact_matrix, t_max){
       new_S[i, t] = rbinom(1, R[i, t-1], prob_w)
       
       # Mettre à jour les compartiments S, E, I, R et D dans la population i
-      S[i, t] = S[i, t-1] - new_E[i, t] + new_S[i, t]
-      E[i, t] = E[i, t-1] + new_E[i, t] - new_I[i,t]
-      I[i, t] = I[i, t-1] + new_I[i, t] - new_R[i, t] - new_D[i, t]
-      R[i, t] = R[i, t-1] + new_R[i, t] - new_S[i, t]
-      D[i, t] = D[i, t-1] + new_D[i, t]
+      # + S'assurer de valeurs positives avec max
+      S[i, t] = max(0, S[i, t-1] - new_E[i, t] + new_S[i, t])
+      E[i, t] = max(0, E[i, t-1] + new_E[i, t] - new_I[i, t])
+      I[i, t] = max(0, I[i, t-1] + new_I[i, t] - new_R[i, t] - new_D[i, t])
+      R[i, t] = max(0, R[i, t-1] + new_R[i, t] - new_S[i, t])
+      D[i, t] = max(0, D[i, t-1] + new_D[i, t])
       
       # Simulation de l'étape de propagation dans chaque population
       for (j in 1:nb_state) {
@@ -906,7 +910,7 @@ SEIRDS_model_metapop_det = function(X0, P0, contact_matrix, t_max){
           
           prob_transmission_from_j = 1 - exp(-beta_inter * contact_matrix[i, j] * I[j, t-1] / N[i, t-1])
           infections_from_j = rbinom(1, S[i, t], prob_transmission_from_j)
-          
+
           new_I_from_ext[i, t] = new_I_from_ext[i, t] + infections_from_j
           
           S[i, t] = S[i, t] - infections_from_j
@@ -914,7 +918,7 @@ SEIRDS_model_metapop_det = function(X0, P0, contact_matrix, t_max){
         }
       }
       
-      N[i, t] = S[i, t] + I[i, t] + R[i, t] - D[i, t]
+      N[i, t] = S[i, t] + E[i, t] + I[i, t] + R[i, t] - D[i, t]
       
     }
     
@@ -941,31 +945,76 @@ SEIRDS_model_metapop_det = function(X0, P0, contact_matrix, t_max){
 E0 = 1             # Nombre initial d'exposés
 X0 = c(E0=E0) # param a estimer
 
-beta = 0.3   # Taux de transmission intrapop
+beta = 0.03   # Taux de transmission intrapop
 beta_inter = 0.01 # taux de transmission interpop <================== aussi sous forme de matrice !!!!!!!
 sigma = 0.3  # Taux d'incubation (1 / durée d'incubation)
-mu = 0.009    # Taux de mortalité
+mu = 0.0001    # Taux de mortalité
 gamma = 0.05  # Taux de immunité 
 w = 0.1  # Taux de perte d'immunité (1 / durée d'infection)
 P0 = c(beta = beta, beta_inter = beta_inter, sigma = sigma,mu = mu,gamma = gamma,w = w) # param a estimer
+
+# Creation matrice de contact --------------------------------------------------
+contact_matrix = matrix(0.3, nrow = nb_state, ncol = nb_state)  # Taux de migration entre population
+
 
 # Deterministe -------------------------------------------------------------------
 
 history_metapop_det = SEIRDS_model_metapop_det(X0, P0, contact_matrix, t_max)
 
+history_metapop_det$S[is.na(history_metapop_det$S)] = 0
+history_metapop_det$E[is.na(history_metapop_det$E)] = 0
+history_metapop_det$I[is.na(history_metapop_det$I)] = 0
+history_metapop_det$R[is.na(history_metapop_det$R)] = 0
+history_metapop_det$D[is.na(history_metapop_det$D)] = 0
 
+
+
+
+# graphiques ---------------------------------------------------------------------
+
+
+
+
+# Test avec Alabama
+pop = 40
+S_test = history_metapop_det$S[pop,]
+E_test = history_metapop_det$E[pop,]
+I_test = history_metapop_det$I[pop,]
+R_test = history_metapop_det$R[pop,]
+D_test = history_metapop_det$D[pop,]
+df_pop_unique = data.frame(S=S_test,E=E_test,I=I_test,R=R_test,D=D_test)
+
+date_time = Sys.time()
+date = format(date_time, "%Y-%m-%d_%H-%M-%S")
+
+graph_dir = "C:/Users/User/Desktop/MASTER/M2/MEPI/PROJET_MEPI/graphs/"
+png(paste0(graph_dir,"graphique_pop_",pop,"__",date,".png"), width = 2000, height = 2000, res = 150)
+plot(x = 1:t_max, y = S_test,col="green",type="l",ylim=c(0,S_test[1]))
+lines(x = 1:t_max, y = E_test,col="orange")
+lines(x = 1:t_max, y = I_test,col="red")
+lines(x = 1:t_max, y = R_test,col="blue")
+lines(x = 1:t_max, y = D_test,col="black")
+dev.off()
+
+png(paste0(graph_dir,"graphique_metapop_",date,".png"), width = 2000, height = 2000, res = 150)
 # Tracé des résultats pour chaque population
-# par(mfrow = c(7, 7))
-# for (i in 1:nnb_state) {
-#   plot(1:T, S[i, ], type = "l", col = "blue", xlab = "Temps", ylab = "Susceptibles", ylim = c(0, max(pop_sizes)))
-#   lines(1:T, I[i, ], col = "red")
-#   lines(1:T, R[i, ], col = "green")
-#   lines(1:T, N[i, ], col = "black")
-#   lines(1:T, new_infections[i, ], col = "orange")
-#   lines(1:T, new_recoveries[i, ], col = "purple")
-#   lines(1:T, new_infections_from_ext[i, ], col = "yellow")
-#   title(paste("Population", i))
-# }
+par(mfrow = c(7, 7))
+for (i in 1:nb_state) {
+  plot(1:t_max, history_metapop_det$S[i, ], 
+       type = "l", 
+       col = "blue", 
+       xlab = "Temps", 
+       ylab = "Susceptibles", 
+       ylim = c(0, history_metapop_det$S[i,1]))
+  lines(1:t_max, history_metapop_det$E[i, ], col = "skyblue")
+  lines(1:t_max, history_metapop_det$I[i, ], col = "red")
+  lines(1:t_max, history_metapop_det$R[i, ], col = "green")
+  lines(1:t_max, history_metapop_det$D[i, ], col = "coral")
+  # lines(1:t_max, new_I_from_ext[i, ], col = "yellow")
+  title(paste("Population", i))
+}
+
+dev.off()
 
 # Stochstique -------------------------------------------------------------------
 
